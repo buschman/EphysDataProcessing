@@ -76,9 +76,9 @@ for file_ind = 1:length(intan_fn_list),
     save_filename = sprintf('%s_Encodes.mat', save_fn);
     if ~exist(save_filename, 'file') || opts.DataOverwrite,
         fprintf('Loading encodes...\n');
-        [~, ~, aux, t] = read_intan_data(intan_fn, 'ReadChannels', chan_list(1));
+        [~, ~, aux, ~] = read_intan_data(intan_fn, 'ReadChannels', chan_list(1));
         fprintf('Saving to MAT...');
-        save(save_filename, 't', 'aux', 'opts', '-v7.3');
+        save(save_filename, 'aux', 'opts', '-v7.3');
         fprintf('done.\n');
     else
         fprintf('File %s, Encodes already processed. Skipping.\n', save_fn);
@@ -99,7 +99,7 @@ for file_ind = 1:length(intan_fn_list),
             end
             
             %Load channel data
-            [~, chan_data, ~, t] = read_intan_data(intan_fn, 'ReadChannels', chan_list(cur_chan));
+            [~, chan_data, ~, ~] = read_intan_data(intan_fn, 'ReadChannels', chan_list(cur_chan));
             chan_data = double(chan_data);
             
             nfft = 2^min(21, nextpow2(length(chan_data)));

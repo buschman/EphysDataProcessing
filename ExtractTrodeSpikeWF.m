@@ -161,6 +161,7 @@ for i = 2:length(spk_ind),
 end
 fprintf('\t\tremoved %d spikes within a window...\n', sum(bad_spk_ind));
 fprintf('\t\tleaving %d spikes (%4.2f Hz).\n', sum(~bad_spk_ind), sum(~bad_spk_ind)./(max_spk_ind./opts.SampleFrequency));
+spk_ind = spk_ind(~bad_spk_ind);
 clear('spk_thresh', 'art_thresh');
 
 Nspk = length(spk_ind);

@@ -37,6 +37,14 @@ if isstr(file_list),
     filedir = fileparts(orig_file_list);
     file_list = dir(file_list);
     file_list = struct2cell(file_list);
+    file_list = file_list(1, :);
+    good_ind = [];
+    for i = 1:length(file_list),
+        if isempty(strfind(file_list{i}, 'ReRef')), %don't use files already re-referenced
+            good_ind = cat(1, good_ind, i);
+        end
+    end
+    file_list = file_list(good_ind);
     file_list = strcat(filedir, '\', file_list(1, :));
     fprintf('Processing %d files that match ''%s''...\n', length(file_list), orig_file_list);
     clear('filedir', 'orig_file_list');
@@ -82,18 +90,18 @@ for cur_var = 1:length(fopts.ReRefVar),
     %Create grand-averaged version
     fprintf('Calculating overall average variable: [%4.0f/%4.0f]', 1, length(ref_list));
     temp = load(file_list{ref_list(1)}, fopts.ReRefVar{cur_var});
-    ovr_avg = temp.(fopts.ReRefVar{cur_var});
+    ovr_avg = double(temp.(fopts.ReRefVar{cur_var}));
     for cur_ref = 2:length(ref_list),
         fprintf('\b\b\b\b\b\b\b\b\b\b\b[%4.0f/%4.0f]', cur_ref, length(ref_list));
         temp = load(file_list{ref_list(cur_ref)}, fopts.ReRefVar{cur_var});
-        ovr_avg = ovr_avg + temp.(fopts.ReRefVar{cur_var});
+        ovr_avg = ovr_avg + double(temp.(fopts.ReRefVar{cur_var}));
     end
     fprintf('\n');
     ovr_avg = ovr_avg./length(ref_list);
     
     %What indexes are 'good'?
     good_ind = [fopts.FilterSettleTime:(length(ovr_avg) - fopts.FilterSettleTime)];
-    
+        
     %Remove from each file in turn
     for cur_file = 1:length(file_list),
         
@@ -101,8 +109,8 @@ for cur_var = 1:length(fopts.ReRefVar),
         %Load the current value
         temp = load(file_list{cur_file}, fopts.ReRefVar{cur_var}, 'opts');
         opts = temp.opts;
-        temp = temp.(fopts.ReRefVar{cur_var});
-
+        temp = double(temp.(fopts.ReRefVar{cur_var}));
+        
         %Re-reference
         if ~fopts.RescaleRef,
             fprintf('\tSubtracting raw reference...\n');
@@ -114,7 +122,8 @@ for cur_var = 1:length(fopts.ReRefVar),
             fprintf('scaled by %5.3e.\n', A);
             temp(good_ind) = temp(good_ind) - A*ovr_avg(good_ind);
         end
-            
+        temp = single(temp);
+                    
         %Save to file
         [pathstr, name, ext] = fileparts(file_list{cur_file});
         save_fn = strcat(pathstr, name, fopts.FileAppendStr, ext);
