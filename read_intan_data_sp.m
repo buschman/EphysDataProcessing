@@ -121,16 +121,13 @@ frewind(fid);
 fread(fid, 3+64, 'uint8');
 
 % allocate space to read the entire file
-slow_road = 0;
+slow_road = 1;
 if (filesize-67) > opts.MaxFastTrackSize,
     if opts.Verbose, fprintf('Can''t allocate an array of that size. '); end
     slow_road = 1;
 end
 
-if ~slow_road,
-    % Pre-allocate large data matrices.
-    aux = zeros(t_count,6,'uint8');
-    
+if ~slow_road,   
     % read the entire file
     %data2 = fread(fid,(filesize-67),'uint8=>uint8');
     data2 = fread(fid, (num_amps*4+1)*t_count, 'uint8=>uint8');
@@ -144,7 +141,8 @@ if ~slow_road,
     
     % delete the digital data
     %data2((num_amps*4)+1:num_amps*4+1:filesize-67) = [];
-    data2((num_amps*4)+1:num_amps*4+1:end) = [];
+        data2((num_amps*4)+1:num_amps*4+1:end) = [];
+
     
     % convert the remaining data from bytes to single
     data2 = typecast(data2,'single');
@@ -157,12 +155,47 @@ if ~slow_road,
     %Extract our channels to read
     data = data(:, ismember(amps, opts.ReadChannels));
 
+elseif ~isempty(opts.ReadChannels),
+    % Go back to the beginning of the file...
+    frewind(fid);
+    
+    % ...skip the header this time...
+    fread(fid, 3+64, 'uint8');
+    data_start_pos = ftell(fid);
+    
+    %Move to beginning of auxilary data
+    fseek(fid, num_amps*4, 'cof');
+    % read the auxilary data
+    aux_data = fread(fid, t_count, 'uint8', 4*num_amps);    
+    % extract individual bits
+    aux = [bitget(aux_data,6),bitget(aux_data,5),bitget(aux_data,4),bitget(aux_data,3),bitget(aux_data,2),bitget(aux_data,1)];
+    clear aux_data;
+    
+    %Pre-allocate data channel
+    data = single(NaN*ones(t_count, length(opts.ReadChannels)));
+    %Loop through channels
+    for chan_ind = 1:length(opts.ReadChannels),
+        %What is current channel
+        cur_chan = opts.ReadChannels(chan_ind);
+        amp_ind = find(amps == cur_chan, 1, 'first');
+        
+        %Move to beginning of data section
+        fseek(fid, data_start_pos, 'bof');
+        
+        %Move forward channel-1 positions
+        fseek(fid, (amp_ind-1)*4, 'cof');
+        
+        %Read data, skipping intervening channels (and auxilary data)
+        data(:, chan_ind) = fread(fid, t_count, 'single', 4*(num_amps-1)+1);
+        
+    end %channel loop
 else
     % Go back to the beginning of the file...
     frewind(fid);
     
     % ...skip the header this time...
     fread(fid, 3+64, 'uint8');
+    data_start_pos = ftell(fid);
     
     % ...and read all the data.
     if opts.Verbose, fprintf('Reading data in chunks. (This may take a while.)\n'); end
@@ -184,7 +217,7 @@ else
         time_ind = i + [0:(opts.TimeChunkSize-1)];
         time_ind  = time_ind((time_ind <= t_count));
         time_data = fread(fid, (num_amps*4+1)*length(time_ind), 'uint8=>uint8');
-        
+
         %Extract out aux inputs
         aux_data = time_data((num_amps*4)+1:num_amps*4+1:end);
         % extract individual bits

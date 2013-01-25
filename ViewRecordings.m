@@ -66,6 +66,12 @@ handles.ContTimeViewWidth = 10; %in seconds
 handles.ContAxes = [];
 handles.ZoomStep = [1 0.2];
 
+%How many waveforms to draw as image compared to lines
+handles.WaveformImageCutoff = 1;
+handles.NumImageSteps = 40;
+handles.ImageTimeInterpScale = 5;
+handles.ImageContrastGamma = 1;
+
 % Update handles structure
 guidata(hObject, handles);
 
@@ -99,7 +105,7 @@ set(cat(1, findobj('Style', 'radiobutton'), findobj('Style', 'edit'), findobj('S
 axes(handles.ContinuousAxes); cla; axis off;
 axes(handles.HistAxes); cla; axis off;
 axes(handles.RawSpikeAxes); cla; axis off;
-axes(handles.AvgSpikeAxes); cla; axis off;
+axes(handles.AvgSpikeAxes); cla; axis off; legend off;
 set([hObject handles.BrowseButton], 'Enable', 'on');
 
 handles.Filename = get(hObject,'String');
@@ -111,7 +117,7 @@ end
 
 %Set waveform filename
 [pathstr, name, ext] = fileparts(handles.Filename);
-handles.WFFilename = sprintf('%s%s.wf', pathstr, name);
+handles.WFFilename = sprintf('%s\\%s.wf', pathstr, name);
 if ~exist(handles.WFFilename, 'file'), handles.WFFilename = ''; end
 
 %Create matlab file object
@@ -181,18 +187,18 @@ set(cat(1, findobj('Style', 'radiobutton'), findobj('Style', 'edit'), findobj('S
     findobj('Style', 'pushbutton')), 'Enable', 'off');
 axes(handles.ContinuousAxes); cla; axis off;
 axes(handles.HistAxes); cla; axis off;
-axes(handles.RawSpikeAxes); cla; axis off;
-axes(handles.AvgSpikeAxes); cla; axis off;
+axes(handles.RawSpikeAxes); cla; axis off; 
+axes(handles.AvgSpikeAxes); cla; axis off; legend off;
 set(hObject, 'Enable', 'on');
 
 %Set filename
-handles.Filename = sprintf('%s\\%s', pathname, filename);
+handles.Filename = sprintf('%s%s', pathname, filename);
 set(handles.FileEdit, 'Enable', 'on', 'String', handles.Filename);
 
 %Set waveform filename
 [pathstr, name, ext] = fileparts(handles.Filename);
-handles.WFFilename = sprintf('%s%s.wf', pathstr, name);
-if ~exist(handles.WFFilename, 'file'), handles.WFFilename = ''; end
+handles.WFFilename = sprintf('%s\\%s.wf', pathstr, name); handles.WFFiletype = 0;
+if ~exist(handles.WFFilename, 'file'), handles.WFFilename = ''; handles.WFFiletype = -1; end
 
 %Create matlab file object
 handles.DataMatObj = matfile(handles.Filename);
@@ -397,7 +403,7 @@ end
 
 function handles = PlotSummaryWFData(handles)
 
-axes(handles.AvgSpikeAxes); cla; axis on;
+axes(handles.AvgSpikeAxes); cla; axis on; legend(handles.AvgSpikeAxes, 'off');
 %Do we have spikes?
 if isempty(handles.WFFilename),
     axis([0 40 0 10]);
@@ -420,7 +426,10 @@ uniq_class = unique(wf_class);
 
 %Plot each classified type as a seperate waveform (add NaNs in between for
 %spacers)
+colors = {[0 0 1], [0 1 0], [1 0 0], [0 1 1], [1 0 1], [0.1 0.1 0.1], [1 0.8 0]};
+leg_str = {}; lh = [];
 for cur_class = 1:length(uniq_class),
+    uniq_class(cur_class)
     cur_ind = (wf_class == uniq_class(cur_class));
     
     %Average waveforms
@@ -430,14 +439,26 @@ for cur_class = 1:length(uniq_class),
         std_wf = cat(1, std_wf, squeeze(nanstd(wf(cur_ind, cur_chan, :), [], 1)), NaN*ones(4, 1));
         spk_t = cat(1, spk_t, (cur_chan - 1)*opts.SamplePoints + [1:opts.SamplePoints]', NaN*ones(4, 1));
     end
-    plot(spk_t, mean_wf, '-');
+    th = plot(spk_t, mean_wf, '-', 'Color', colors{mod(cur_class - 1, length(colors)) + 1});
+    lh = cat(1, lh, th);
     hold on;
-    plot(spk_t, mean_wf + std_wf, ':');
-    plot(spk_t, mean_wf - std_wf, ':');
-    hold all;
+    th = plot(spk_t, mean_wf + std_wf, ':', 'Color', colors{mod(cur_class - 1, length(colors)) + 1});
+    lh = cat(1, lh, th);
+    th = plot(spk_t, mean_wf - std_wf, ':', 'Color', colors{mod(cur_class - 1, length(colors)) + 1});
+    lh = cat(1, lh, th);
+    if uniq_class(cur_class) < 0,
+        leg_str{cur_class} = sprintf('Noise %d', uniq_class(cur_class));
+    elseif uniq_class(cur_class) < 100,
+        leg_str{cur_class} = sprintf('MUA %d', uniq_class(cur_class));
+    else
+        leg_str{cur_class} = sprintf('Unit %d', uniq_class(cur_class));
+    end
 end
 axis tight;
 v = axis;
+lh = cat(1, lh(2:3:end), lh(1:3:end), lh(3:3:end));
+set(handles.AvgSpikeAxes, 'Children', lh);
+legend(leg_str);
 plot(v(1:2), [0 0], 'k-');
 %axis off;
 
@@ -463,7 +484,8 @@ num_chans = round(opts.NumPointsInWF/opts.SamplePoints);
 %Get waveforms from the current window of time
 time_to_plot = get(handles.TimeSlider, 'Value') + handles.ContTimeViewWidth*[-1 1]/2;
 time_to_plot(1) = max(time_to_plot(1), 0); time_to_plot(2) = min(time_to_plot(2), handles.ContTime(2));
-[~, wf] = LoadSpikeWF(handles.WFFilename, time_to_plot, 3);
+[~, wf, wf_class] = LoadSpikeWF(handles.WFFilename, time_to_plot, 3);
+uniq_class = unique(wf_class);
 
 if isempty(wf),
     axis([0 40 0 10]);
@@ -473,20 +495,69 @@ if isempty(wf),
     return;
 end
 
-%Spike waveform time
-spk_t = linspace(handles.SpikeExtract_WFRange(1), handles.SpikeExtract_WFRange(2), opts.SamplePoints);
-
-%Plot each channel as a seperate waveform
-colors = {'b', 'g', 'r', 'c', 'k'};
-for cur_chan = 1:num_chans,
-    plot(spk_t + (cur_chan - 1)*1.1*diff(handles.SpikeExtract_WFRange), squeeze(wf(:, cur_chan, :)), colors{mod(cur_chan-1, length(colors))+1}); hold on;
+colors = {[0 0 1], [0 1 0], [1 0 0], [0 1 1], [1 0 1], [0.1 0.1 0.1], [1 0.8 0]};
+%Plot waveforms
+if size(wf, 1) > handles.WaveformImageCutoff,
+    %Plotting as an image
+    
+    %Concatenate waveforms across channels
+    cat_wf = []; spk_t = [];
+    for cur_chan = 1:num_chans,
+        cat_wf = cat(2, cat_wf, reshape(wf(:, cur_chan, :), [size(wf, 1) size(wf, 3)]), NaN*ones(size(wf, 1), 4));
+        spk_t = cat(1, spk_t, (cur_chan - 1)*(opts.SamplePoints+4) + [1:(opts.SamplePoints+4)]');
+    end
+    cat_wf = cat_wf(:, 1:(end-4), :);
+    spk_t = spk_t(1:(end-4));
+    
+    wf_max = prctile(cat_wf(:), 99);
+    wf_min = prctile(cat_wf(:), 1);
+    y_scale = linspace(wf_min, wf_max, handles.NumImageSteps);
+    x_scale = linspace(spk_t(1), spk_t(end), handles.ImageTimeInterpScale*length(spk_t));
+    cur_img = zeros(handles.NumImageSteps, handles.ImageTimeInterpScale*length(spk_t), 3);
+    mean_wf = NaN*ones(length(uniq_class), length(spk_t));
+    for cur_class = 1:length(uniq_class),
+        cur_ind = (wf_class == uniq_class(cur_class));
+        if sum(cur_ind) == 1,
+            wf_img = hist(repmat(cat_wf(cur_ind, :), [2 1]), y_scale);
+            wf_img = wf_img./2;
+        else
+            wf_img = hist(interp1(spk_t, cat_wf(cur_ind, :)', x_scale, 'cubic')', y_scale);
+        end
+        mean_wf(cur_class, :) = nanmedian(cat_wf(cur_ind, :), 1);
+        cur_img = cur_img + (repmat(wf_img, [1 1 3]).*repmat(reshape(1 - colors{cur_class}, [1 1 3]), [handles.NumImageSteps length(x_scale) 1]));
+    end
+    cur_img = cur_img./size(cat_wf, 1);
+    cur_img = 1 - cur_img;
+    cur_img(repmat(all(cur_img == 0, 3), [1 1 3])) = 1;
+    cur_img = imadjust(cur_img, stretchlim(cur_img), [0 1], handles.ImageContrastGamma);
+    image(x_scale, y_scale, cur_img);
+    hold on;
+    for cur_class = 1:length(uniq_class), plot(spk_t, mean_wf(cur_class, :), '-', 'Color', colors{cur_class}, 'LineWidth', 3); end
+    set(gca, 'YDir', 'Normal', 'YLim', [wf_min wf_max]);
+    axis tight; hold on;
+    plot(spk_t, zeros(length(spk_t), 1), 'k-');
+else
+    %Plot individual waveforms
+    
+    %Concatenate waveforms across channels
+    cat_wf = []; spk_t = [];
+    for cur_chan = 1:num_chans,
+        cat_wf = cat(2, cat_wf, reshape(wf(:, cur_chan, :), [size(wf, 1) size(wf, 3)]), NaN*ones(size(wf, 1), 4));
+        spk_t = cat(1, spk_t, (cur_chan - 1)*opts.SamplePoints + [1:opts.SamplePoints]', NaN*ones(4, 1));
+    end
+    
+    leg_str = {}; lh = [];
+    for cur_class = 1:length(uniq_class),
+        cur_ind = (wf_class == uniq_class(cur_class));
+        
+        plot(spk_t, cat_wf(cur_ind, :), '-', 'Color', colors{mod(cur_class - 1, length(colors)) + 1});
+        hold on;
+    end
+    axis tight;
+    v = axis;
+    plot(v(1:2), [0 0], 'k-');
+    %axis off;
 end
-axis tight;
-v = axis;
-plot(v(1:2), [0 0], 'k-');
-
-
-
 
 
 % --- Executes on button press in XZoomInButton.
@@ -612,9 +683,15 @@ t_len = size(handles.DataMatObj, cur_var);
 if isempty(handles.WFFilename),
     %Set waveform filename
     [pathstr, name, ext] = fileparts(handles.Filename);
-    handles.WFFilename = sprintf('%s%s.wf', pathstr, name);
+    handles.WFFilename = sprintf('%s\\%s.wf', pathstr, name);
 end
 
+if exist(handles.WFFilename, 'file'),
+    button = questdlg('Waveform file already exists. Overwrite?', 'Overwrite Waveform file?', 'Yes', 'No', 'Yes');
+    if strcmpi(button, 'No'),
+        return;
+    end
+end        
 set(hObject, 'String', 'Extracting...'); guidata(hObject, handles); drawnow;
 ExtractTrodeSpikeWF(handles.DataMatObj.(cur_var)(1:t_len(1), 1:t_len(2)), handles.WFFilename, 'Overwrite', 1, ...
     'SpikeExtract_ThreshType', handles.SpikeExtract_ThreshType, 'SpikeExtract_SpikeThresh', handles.SpikeExtract_SpikeThresh, ...
